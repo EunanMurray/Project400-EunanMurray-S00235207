@@ -1,0 +1,255 @@
+@page "/admin/tailgating"
+@rendermode InteractiveServer
+@implements IDisposable
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@inject IHttpClientFactory HttpClientFactory
+@inject ISnackbar Snackbar
+
+<PageTitle>Tailgating Alerts - Smart Access</PageTitle>
+
+<div class="page-header">
+    <div>
+        <MudText Typo="Typo.h4">Tailgating Alerts</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">Review alerts when multiple people are detected at a door</MudText>
+    </div>
+    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="LoadAlerts"
+               StartIcon="@Icons.Material.Filled.Refresh">
+        Refresh
+    </MudButton>
+</div>
+
+<MudTabs @bind-ActivePanelIndex="activeTab" Elevation="0" Rounded="true" ApplyEffectsToContainer="true" Class="mb-4">
+    <MudTabPanel Text="Pending" BadgeData="@pendingAlerts.Count" BadgeColor="Color.Error">
+        @if (isLoading)
+        {
+            <div class="d-flex justify-center pa-8">
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            </div>
+        }
+        else if (pendingAlerts.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-4">No pending tailgating alerts.</MudAlert>
+        }
+        else
+        {
+            <MudGrid Spacing="3" Class="mt-2">
+                @foreach (var alert in pendingAlerts)
+                {
+                    <MudItem xs="12" md="6" lg="4">
+                        <MudCard>
+                            @if (!string.IsNullOrEmpty(alert.ImageBase64))
+                            {
+                                <MudCardMedia Image="@($"data:image/jpeg;base64,{alert.ImageBase64}")" Height="200" />
+                            }
+                            <MudCardContent>
+                                <div class="d-flex justify-space-between align-center mb-2">
+                                    <MudChip T="string" Color="Color.Error" Size="Size.Small">
+                                        @alert.PeopleDetected people
+                                    </MudChip>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        @alert.CreatedAt.ToString("g")
+                                    </MudText>
+                                </div>
+                                <MudText Typo="Typo.body2">
+                                    <strong>Door:</strong> @alert.DeviceId
+                                </MudText>
+                                <MudText Typo="Typo.body2">
+                                    <strong>Camera:</strong> @alert.CameraDeviceId
+                                </MudText>
+                                <MudText Typo="Typo.body2">
+                                    <strong>User:</strong> @(alert.UserName ?? "Unknown")
+                                </MudText>
+                                <MudText Typo="Typo.body2">
+                                    <strong>Confidence:</strong> @alert.Confidence.ToString("P0")
+                                </MudText>
+                            </MudCardContent>
+                            <MudCardActions Class="card-actions-center">
+                                <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
+                                           OnClick="@(() => ReviewAlert(alert.Id, "Confirmed"))">
+                                    Confirm
+                                </MudButton>
+                                <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small"
+                                           OnClick="@(() => ReviewAlert(alert.Id, "Dismissed"))">
+                                    Dismiss
+                                </MudButton>
+                            </MudCardActions>
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="History">
+        @if (isLoadingHistory)
+        {
+            <div class="d-flex justify-center pa-8">
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            </div>
+        }
+        else if (allAlerts.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-4">No tailgating alert history.</MudAlert>
+        }
+        else
+        {
+            <MudGrid Spacing="3" Class="mt-2">
+                @foreach (var alert in allAlerts)
+                {
+                    <MudItem xs="12" md="6" lg="4">
+                        <MudCard>
+                            @if (!string.IsNullOrEmpty(alert.ImageBase64))
+                            {
+                                <MudCardMedia Image="@($"data:image/jpeg;base64,{alert.ImageBase64}")" Height="200" />
+                            }
+                            <MudCardContent>
+                                <div class="d-flex justify-space-between align-center mb-2">
+                                    <MudChip T="string" Color="@GetStatusColor(alert.Status)" Size="Size.Small">
+                                        @alert.Status
+                                    </MudChip>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        @alert.CreatedAt.ToString("g")
+                                    </MudText>
+                                </div>
+                                <MudText Typo="Typo.body2">
+                                    <strong>People:</strong> @alert.PeopleDetected
+                                </MudText>
+                                <MudText Typo="Typo.body2">
+                                    <strong>Door:</strong> @alert.DeviceId
+                                </MudText>
+                                <MudText Typo="Typo.body2">
+                                    <strong>Camera:</strong> @alert.CameraDeviceId
+                                </MudText>
+                                <MudText Typo="Typo.body2">
+                                    <strong>User:</strong> @(alert.UserName ?? "Unknown")
+                                </MudText>
+                                <MudText Typo="Typo.body2">
+                                    <strong>Confidence:</strong> @alert.Confidence.ToString("P0")
+                                </MudText>
+                                @if (!string.IsNullOrEmpty(alert.ReviewedBy))
+                                {
+                                    <MudText Typo="Typo.body2">
+                                        <strong>Reviewed by:</strong> @alert.ReviewedBy
+                                    </MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        @alert.ReviewedAt?.ToString("g")
+                                    </MudText>
+                                }
+                            </MudCardContent>
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private List<TailgateAlertDto> pendingAlerts = new();
+    private List<TailgateAlertDto> allAlerts = new();
+    private bool isLoading = true;
+    private bool isLoadingHistory;
+    private int activeTab;
+    private int previousTab = -1;
+    private System.Threading.Timer? refreshTimer;
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAlerts();
+
+        refreshTimer = new System.Threading.Timer(async _ =>
+        {
+            await LoadAlerts();
+            await InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (activeTab == 1 && previousTab != 1)
+        {
+            previousTab = activeTab;
+            await LoadHistory();
+            StateHasChanged();
+        }
+        else
+        {
+            previousTab = activeTab;
+        }
+    }
+
+    private async Task LoadAlerts()
+    {
+        try
+        {
+            var httpClient = HttpClientFactory.CreateClient("Project400API");
+            var result = await httpClient.GetFromJsonAsync<List<TailgateAlertDto>>(
+                "/api/tailgate/alerts/pending");
+            pendingAlerts = result ?? new();
+        }
+        catch
+        {
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadHistory()
+    {
+        isLoadingHistory = true;
+        try
+        {
+            var httpClient = HttpClientFactory.CreateClient("Project400API");
+            var result = await httpClient.GetFromJsonAsync<List<TailgateAlertDto>>(
+                "/api/tailgate/alerts?count=50");
+            allAlerts = result ?? new();
+        }
+        catch
+        {
+        }
+        finally
+        {
+            isLoadingHistory = false;
+        }
+    }
+
+    private async Task ReviewAlert(Guid alertId, string status)
+    {
+        try
+        {
+            var httpClient = HttpClientFactory.CreateClient("Project400API");
+            var response = await httpClient.PostAsync(
+                $"/api/tailgate/alerts/{alertId}/review?status={status}&reviewedBy=admin", null);
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Alert {status.ToLower()}", Severity.Success);
+                await LoadAlerts();
+            }
+            else
+            {
+                Snackbar.Add("Failed to review alert", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private Color GetStatusColor(string status) => status switch
+    {
+        "Pending" => Color.Warning,
+        "Confirmed" => Color.Error,
+        "Dismissed" => Color.Default,
+        "Reviewed" => Color.Info,
+        _ => Color.Default
+    };
+}

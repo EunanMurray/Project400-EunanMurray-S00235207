@@ -1,0 +1,136 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@using Microsoft.AspNetCore.Components.Authorization
+
+<MudThemeProvider Theme="_theme" @bind-IsDarkMode="_isDarkMode" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<AuthorizeView Policy="Admin">
+    <Authorized>
+        <MudLayout>
+            <MudAppBar Elevation="0" Class="appbar-border">
+                <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@ToggleDrawer" />
+                <MudIcon Icon="@Icons.Material.Filled.Security" Class="ml-2 mr-2" />
+                <MudText Typo="Typo.h6" Class="ml-1">Smart Access</MudText>
+                <MudSpacer />
+                <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
+                               Color="Color.Inherit"
+                               OnClick="@ToggleDarkMode" />
+            </MudAppBar>
+            <MudDrawer @bind-Open="@drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Class="drawer-border">
+                <NavMenu />
+            </MudDrawer>
+            <MudMainContent>
+                <MudContainer MaxWidth="MaxWidth.Large" Class="my-4 pa-4 pa-sm-6 responsive-container">
+                    @Body
+                </MudContainer>
+            </MudMainContent>
+        </MudLayout>
+    </Authorized>
+    <NotAuthorized>
+        @{
+            var path = new Uri(Navigation.Uri).AbsolutePath.TrimEnd('/').ToLowerInvariant();
+            var isPublicPage = path.StartsWith("/mobile-register")
+                            || path.StartsWith("/admin-claim")
+                            || path.StartsWith("/admin/login")
+                            || path.StartsWith("/q/")
+                            || path.StartsWith("/unlock")
+                            || path.StartsWith("/auth/");
+        }
+        @if (isPublicPage)
+        {
+            <MudLayout>
+                <MudAppBar Elevation="0" Class="appbar-border">
+                    <MudIcon Icon="@Icons.Material.Filled.Security" Class="ml-2 mr-2" />
+                    <MudText Typo="Typo.h6" Class="ml-1">Smart Access</MudText>
+                    <MudSpacer />
+                </MudAppBar>
+                <MudMainContent>
+                    <MudContainer MaxWidth="MaxWidth.Large" Class="my-4 pa-4 pa-sm-6 responsive-container">
+                        @Body
+                    </MudContainer>
+                </MudMainContent>
+            </MudLayout>
+        }
+        else
+        {
+            <MudLayout>
+                <MudAppBar Elevation="0" Class="appbar-border">
+                    <MudIcon Icon="@Icons.Material.Filled.Security" Class="ml-2 mr-2" />
+                    <MudText Typo="Typo.h6" Class="ml-1">Smart Access</MudText>
+                </MudAppBar>
+                <MudMainContent>
+                    <MudContainer MaxWidth="MaxWidth.Small" Class="my-4 my-sm-8 pa-4 responsive-container">
+                        <RedirectToAdminLogin />
+                    </MudContainer>
+                </MudMainContent>
+            </MudLayout>
+        }
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private bool drawerOpen = true;
+    private bool _isDarkMode = false;
+
+    private void ToggleDrawer()
+    {
+        drawerOpen = !drawerOpen;
+    }
+
+    private void ToggleDarkMode()
+    {
+        _isDarkMode = !_isDarkMode;
+    }
+
+    private MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight()
+        {
+            Primary = "#0D7377",
+            Secondary = "#455A64",
+            AppbarBackground = "#0D7377",
+            AppbarText = "#FFFFFF",
+            Background = "#FAFBFC",
+            Surface = "#FFFFFF",
+            Success = "#2E7D32",
+            Warning = "#F57C00",
+            Error = "#C62828",
+            TextPrimary = "#1A1A2E",
+            TextSecondary = "#6B7280",
+            DrawerBackground = "#FFFFFF",
+            DrawerText = "#1A1A2E",
+            DrawerIcon = "#6B7280",
+            TableLines = "#E5E7EB",
+            Divider = "#E5E7EB",
+        },
+        PaletteDark = new PaletteDark()
+        {
+            Primary = "#26A69A",
+            Secondary = "#78909C",
+            AppbarBackground = "#1E1E2E",
+            AppbarText = "#E0E0E0",
+            Background = "#1E1E2E",
+            Surface = "#262638",
+            Success = "#66BB6A",
+            Warning = "#FFA726",
+            Error = "#EF5350",
+            TextPrimary = "#E0E0E0",
+            TextSecondary = "#9CA3AF",
+            DrawerBackground = "#262638",
+            DrawerText = "#E0E0E0",
+            DrawerIcon = "#9CA3AF",
+            TableLines = "#3A3A4E",
+            Divider = "#3A3A4E",
+        },
+        Typography = new Typography()
+        {
+            Default = new DefaultTypography()
+            {
+                FontFamily = new[] { "Inter", "Roboto", "Helvetica", "Arial", "sans-serif" }
+            }
+        }
+    };
+}

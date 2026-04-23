@@ -1,0 +1,203 @@
+@page "/admin/keycards"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@inject IHttpClientFactory HttpClientFactory
+@inject ISnackbar Snackbar
+@rendermode InteractiveServer
+
+<PageTitle>Keycards - Smart Access</PageTitle>
+
+<div class="page-header">
+    <div>
+        <MudText Typo="Typo.h4">Keycards</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">Track and manage all keycard assignments</MudText>
+    </div>
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick="@(() => showAddForm = !showAddForm)">
+        Assign Keycard
+    </MudButton>
+</div>
+
+@if (showAddForm)
+{
+    <MudPaper Elevation="0" Class="pa-6 mb-6" Style="border: 1px solid rgba(0,0,0,0.08);">
+        <MudText Typo="Typo.h6" Class="section-heading mb-4">Assign New Keycard</MudText>
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="5">
+                <MudTextField @bind-Value="newCardUid" Label="Card UID" Variant="Variant.Outlined"
+                              Placeholder="e.g., 04:5A:3B:C2" Class="font-mono"
+                              HelperText="Format: XX:XX:XX:XX" />
+            </MudItem>
+            <MudItem xs="12" md="5">
+                <MudTextField @bind-Value="newUserId" Label="User ID (GUID)" Variant="Variant.Outlined"
+                              HelperText="Copy from Users page" Class="font-mono" />
+            </MudItem>
+            <MudItem xs="12" md="2" Class="d-flex align-end">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" OnClick="AddKeycard" Disabled="@isAdding">
+                    @if (isAdding)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                    }
+                    else
+                    {
+                        <text>Assign</text>
+                    }
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+}
+
+<MudTable Items="@filteredKeycards" Loading="@isLoading" Hover="true" Elevation="0"
+          Style="border: 1px solid rgba(0,0,0,0.08);">
+    <ToolBarContent>
+        <MudTextField @bind-Value="searchQuery" Placeholder="Search keycards..." Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true"
+                      DebounceInterval="300" Style="max-width: 300px;" />
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="LoadKeycards" />
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Card UID</MudTh>
+        <MudTh>User</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Last Used</MudTh>
+        <MudTh>Created</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Card UID">
+            <MudText Typo="Typo.body2" Class="font-mono">@context.CardUid</MudText>
+        </MudTd>
+        <MudTd DataLabel="User">
+            <div>
+                <MudText Typo="Typo.body2"><strong>@context.DisplayName</strong></MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Username</MudText>
+            </div>
+        </MudTd>
+        <MudTd DataLabel="Status">
+            @if (context.IsActive)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">Active</MudChip>
+            }
+            else
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text">Inactive</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Last Used">
+            @if (context.LastUsedAt.HasValue)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">@FormatRelativeTime(context.LastUsedAt.Value)</MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Style="font-style: italic;">Never</MudText>
+            }
+        </MudTd>
+        <MudTd DataLabel="Created">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">@FormatRelativeTime(context.CreatedAt)</MudText>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <div class="pa-8 text-center">
+            <MudIcon Icon="@Icons.Material.Filled.CreditCard" Size="Size.Large" Color="Color.Secondary" />
+            <MudText Typo="Typo.body1" Class="mt-2" Color="Color.Secondary">No keycards found</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Assign a keycard via Employee Setup or the button above.</MudText>
+        </div>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private List<KeycardDto> keycards = new();
+    private string newCardUid = "";
+    private string newUserId = "";
+    private string searchQuery = "";
+    private bool isLoading = false;
+    private bool isAdding = false;
+    private bool showAddForm = false;
+    private HttpClient Http => HttpClientFactory.CreateClient("Project400API");
+
+    private IEnumerable<KeycardDto> filteredKeycards => string.IsNullOrWhiteSpace(searchQuery)
+        ? keycards
+        : keycards.Where(k => k.CardUid.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
+                           || k.DisplayName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
+                           || k.Username.Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadKeycards();
+    }
+
+    private async Task LoadKeycards()
+    {
+        isLoading = true;
+        try
+        {
+            var response = await Http.GetFromJsonAsync<List<KeycardDto>>("/api/admin/keycards");
+            keycards = response ?? new();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading keycards: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task AddKeycard()
+    {
+        if (string.IsNullOrWhiteSpace(newCardUid) || string.IsNullOrWhiteSpace(newUserId))
+        {
+            Snackbar.Add("Please fill in all fields", Severity.Warning);
+            return;
+        }
+
+        if (!Guid.TryParse(newUserId, out var userGuid))
+        {
+            Snackbar.Add("Invalid User ID format", Severity.Error);
+            return;
+        }
+
+        isAdding = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync($"/api/admin/keycards?cardUid={Uri.EscapeDataString(newCardUid)}&userId={userGuid}", new { });
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Keycard '{newCardUid}' assigned", Severity.Success);
+                newCardUid = "";
+                newUserId = "";
+                showAddForm = false;
+                await LoadKeycards();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Failed to assign keycard: {error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            isAdding = false;
+        }
+    }
+
+    private string FormatRelativeTime(DateTime utcTime)
+    {
+        var diff = DateTime.UtcNow - utcTime;
+        if (diff.TotalMinutes < 1) return "just now";
+        if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 30) return $"{(int)diff.TotalDays}d ago";
+        return utcTime.ToLocalTime().ToString("dd MMM yyyy");
+    }
+}

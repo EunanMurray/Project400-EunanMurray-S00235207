@@ -1,0 +1,28 @@
+@rendermode InteractiveServer
+
+<div class="pa-4">
+    <MudText Typo="Typo.overline" Color="Color.Secondary" Class="pl-2">GENERAL</MudText>
+</div>
+<MudNavMenu>
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+    <MudNavLink Href="/employee-setup" Icon="@Icons.Material.Filled.PersonAdd">Employee Setup</MudNavLink>
+
+    <MudDivider Class="my-3" />
+
+    <div class="px-4 mb-1">
+        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="pl-2">ADMIN</MudText>
+    </div>
+    <MudNavGroup Title="Administration" Icon="@Icons.Material.Filled.Settings" Expanded="true">
+        <MudNavLink Href="/admin/doors" Icon="@Icons.Material.Filled.MeetingRoom">Doors</MudNavLink>
+        <MudNavLink Href="/admin/keycards" Icon="@Icons.Material.Filled.CreditCard">Keycards</MudNavLink>
+        <MudNavLink Href="/admin/users" Icon="@Icons.Material.Filled.People">Employees</MudNavLink>
+    </MudNavGroup>
+
+    <MudDivider Class="my-3" />
+
+    <div class="px-4 mb-1">
+        <MudText Typo="Typo.overline" Color="Color.Secondary" Class="pl-2">SECURITY</MudText>
+    </div>
+    <MudNavLink Href="/admin/tailgating" Icon="@Icons.Material.Filled.CameraAlt">Tailgating Alerts</MudNavLink>
+    <MudNavLink Href="/admin/audit-logs" Icon="@Icons.Material.Filled.History">Audit Logs</MudNavLink>
+</MudNavMenu>

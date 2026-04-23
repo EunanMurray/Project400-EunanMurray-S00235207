@@ -1,0 +1,380 @@
+@page "/admin/login"
+@rendermode InteractiveServer
+@implements IDisposable
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject IConfiguration Configuration
+@inject ILogger<AdminLogin> Logger
+
+<PageTitle>Admin Login - Smart Access</PageTitle>
+
+@if (isRedirecting)
+{
+    <div class="d-flex justify-center mt-8">
+        <MudPaper Class="pa-8 text-center" Style="max-width: 480px; width: 100%;">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            <MudText Class="mt-2">Redirecting to secure domain...</MudText>
+        </MudPaper>
+    </div>
+}
+else
+{
+<div class="d-flex justify-center mt-4 mt-sm-8 px-2">
+    <MudPaper Elevation="2" Class="pa-4 pa-sm-8" Style="max-width: 520px; width: 100%;">
+        <MudText Typo="Typo.h5" Align="Align.Center" Class="mb-2">Admin Login</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Align="Align.Center" Class="mb-4">
+            Sign in with your passkey to access the admin dashboard
+        </MudText>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-4" CloseIconClicked="() => errorMessage = string.Empty" ShowCloseIcon="true">
+                @errorMessage
+            </MudAlert>
+        }
+
+        @if (loginComplete)
+        {
+            <MudPaper Elevation="0" Class="pa-6 mt-2" Style="border: 1px solid rgba(0,0,0,0.08);">
+                <div class="d-flex flex-column align-center">
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Style="font-size: 64px;" Class="mb-3" />
+                    <MudText Typo="Typo.h6" Color="Color.Success">Authenticated!</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">Redirecting to dashboard...</MudText>
+                </div>
+            </MudPaper>
+        }
+        else
+        {
+            <MudTabs @bind-ActivePanelIndex="activeTab" Elevation="0" Rounded="true" Centered="true" Class="mb-4"
+                     ApplyEffectsToContainer="true" PanelClass="pa-0 pt-4">
+
+                <MudTabPanel Text="This Device" Icon="@Icons.Material.Filled.Fingerprint">
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Align="Align.Center" Class="mb-4">
+                        Authenticate using a passkey saved on this device
+                    </MudText>
+
+                    <MudTextField @bind-Value="directUsername"
+                                  Label="Username"
+                                  Variant="Variant.Outlined"
+                                  Class="mb-4"
+                                  Immediate="true"
+                                  OnKeyDown="OnDirectUsernameKeyDown" />
+
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               FullWidth="true"
+                               Size="Size.Large"
+                               OnClick="DirectPasskeyLogin"
+                               Disabled="@(isDirectLoggingIn || string.IsNullOrWhiteSpace(directUsername))"
+                               StartIcon="@Icons.Material.Filled.Fingerprint">
+                        @if (isDirectLoggingIn)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                            <text>Authenticating...</text>
+                        }
+                        else
+                        {
+                            <text>Login with Passkey</text>
+                        }
+                    </MudButton>
+                </MudTabPanel>
+
+                <MudTabPanel Text="Phone Scan" Icon="@Icons.Material.Filled.QrCode2">
+                    @if (isLoading)
+                    {
+                        <div class="d-flex justify-center pa-8">
+                            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                        </div>
+                    }
+                    else if (!string.IsNullOrEmpty(qrImageBase64))
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Align="Align.Center" Class="mb-4">
+                            Scan this QR code with your phone to authenticate
+                        </MudText>
+
+                        <div class="d-flex justify-center">
+                            <MudPaper Class="pa-4" Elevation="0" Style="background-color: white; border: 1px solid #e0e0e0; display: inline-block;">
+                                <img src="data:image/png;base64,@qrImageBase64" alt="Admin Login QR"
+                                     style="width: 240px; height: 240px; max-width: 100%; display: block;" />
+                            </MudPaper>
+                        </div>
+
+                        <div class="d-flex justify-center mt-4">
+                            <MudChip T="string" Color="@(secondsRemaining <= 30 ? Color.Error : Color.Warning)"
+                                     Size="Size.Medium" Icon="@Icons.Material.Filled.Timer">
+                                Expires in @(secondsRemaining / 60)m @(secondsRemaining % 60)s
+                            </MudChip>
+                        </div>
+
+                        <MudPaper Elevation="0" Class="pa-3 mt-4" Style="border: 1px solid rgba(0,0,0,0.08);">
+                            <div class="d-flex align-center justify-center">
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Primary" Class="mr-3" />
+                                <MudText Typo="Typo.subtitle2">Waiting for phone scan...</MudText>
+                            </div>
+                        </MudPaper>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Align="Align.Center" Class="mb-4">
+                            Generate a QR code and scan it with your phone to authenticate remotely
+                        </MudText>
+
+                        <div class="d-flex justify-center">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartLogin"
+                                       Size="Size.Large" StartIcon="@Icons.Material.Filled.QrCode2">
+                                Generate QR Code
+                            </MudButton>
+                        </div>
+                    }
+                </MudTabPanel>
+            </MudTabs>
+        }
+    </MudPaper>
+</div>
+}
+
+@code {
+    private bool isRedirecting = false;
+    private int activeTab = 0;
+    private string directUsername = "";
+    private bool isDirectLoggingIn = false;
+    private string qrImageBase64 = "";
+    private string loginCode = "";
+    private string errorMessage = "";
+    private bool isLoading = false;
+    private bool loginComplete = false;
+    private int secondsRemaining = 300;
+
+    private System.Threading.Timer? pollTimer;
+    private System.Threading.Timer? countdownTimer;
+
+    public void Dispose()
+    {
+        pollTimer?.Dispose();
+        countdownTimer?.Dispose();
+    }
+
+    protected override void OnInitialized()
+    {
+        var currentUri = new Uri(Navigation.Uri);
+        if (!currentUri.Host.Contains("eunanmurray.ie", StringComparison.OrdinalIgnoreCase)
+            && !currentUri.Host.Contains("localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            var redirectUrl = $"https://www.eunanmurray.ie{currentUri.PathAndQuery}";
+            Logger.LogInformation("Redirecting from {Current} to {Target} for WebAuthn domain compatibility", Navigation.Uri, redirectUrl);
+            isRedirecting = true;
+            Navigation.NavigateTo(redirectUrl, forceLoad: true);
+        }
+    }
+
+    private async Task OnDirectUsernameKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(directUsername) && !isDirectLoggingIn)
+        {
+            await DirectPasskeyLogin();
+        }
+    }
+
+    private async Task DirectPasskeyLogin()
+    {
+        if (string.IsNullOrWhiteSpace(directUsername)) return;
+
+        isDirectLoggingIn = true;
+        errorMessage = "";
+        StateHasChanged();
+
+        try
+        {
+            var httpClient = HttpClientFactory.CreateClient("Project400API");
+
+            var optionsResponse = await httpClient.PostAsJsonAsync("/api/auth/login-options",
+                new { Username = directUsername });
+
+            if (!optionsResponse.IsSuccessStatusCode)
+            {
+                errorMessage = "Failed to get authentication challenge. Check your username.";
+                return;
+            }
+
+            var optionsResult = await optionsResponse.Content.ReadFromJsonAsync<LoginOptionsResult>();
+            if (optionsResult == null || string.IsNullOrEmpty(optionsResult.OptionsJson))
+            {
+                errorMessage = "Invalid response from server.";
+                return;
+            }
+
+            string assertionJson;
+            try
+            {
+                assertionJson = await JS.InvokeAsync<string>("webAuthn.getCredential", optionsResult.OptionsJson);
+            }
+            catch (Microsoft.JSInterop.JSException)
+            {
+                errorMessage = "Passkey authentication was cancelled or failed.";
+                return;
+            }
+
+            if (string.IsNullOrEmpty(assertionJson))
+            {
+                errorMessage = "Passkey authentication was cancelled.";
+                return;
+            }
+
+            var directResponse = await httpClient.PostAsJsonAsync("/api/auth/admin-login/direct",
+                new { Username = directUsername, AssertionResponse = assertionJson });
+
+            if (directResponse.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                errorMessage = "You are not an admin.";
+                return;
+            }
+
+            if (!directResponse.IsSuccessStatusCode)
+            {
+                var error = await directResponse.Content.ReadAsStringAsync();
+                errorMessage = "Authentication failed. Please try again.";
+                return;
+            }
+
+            var result = await directResponse.Content.ReadFromJsonAsync<DirectLoginResult>();
+            if (result == null || string.IsNullOrEmpty(result.UserId))
+            {
+                errorMessage = "Unexpected response from server.";
+                return;
+            }
+
+            loginComplete = true;
+            StateHasChanged();
+
+            var signinUrl = $"/auth/admin-signin?userId={Uri.EscapeDataString(result.UserId)}&displayName={Uri.EscapeDataString(result.DisplayName ?? "Admin")}&username={Uri.EscapeDataString(result.Username ?? "admin")}";
+            Navigation.NavigateTo(signinUrl, forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isDirectLoggingIn = false;
+        }
+    }
+
+    private async Task StartLogin()
+    {
+        isLoading = true;
+        errorMessage = "";
+        loginComplete = false;
+        secondsRemaining = 300;
+        StateHasChanged();
+
+        try
+        {
+            var httpClient = HttpClientFactory.CreateClient("Project400API");
+            var response = await httpClient.PostAsync("/api/auth/admin-login/start", null);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                errorMessage = "Failed to start admin login";
+                return;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<AdminLoginStartResponse>();
+            if (result != null)
+            {
+                qrImageBase64 = result.QrImageBase64;
+                loginCode = result.Code;
+                StartPolling();
+                StartCountdown();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void StartPolling()
+    {
+        pollTimer?.Dispose();
+        pollTimer = new System.Threading.Timer(async _ =>
+        {
+            await CheckLoginStatus();
+        }, null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+    }
+
+    private void StartCountdown()
+    {
+        countdownTimer?.Dispose();
+        countdownTimer = new System.Threading.Timer(async _ =>
+        {
+            secondsRemaining--;
+            if (secondsRemaining <= 0)
+            {
+                countdownTimer?.Dispose();
+                pollTimer?.Dispose();
+                errorMessage = "QR code expired. Please try again.";
+                qrImageBase64 = "";
+                loginCode = "";
+            }
+            await InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    private async Task CheckLoginStatus()
+    {
+        if (loginComplete || string.IsNullOrEmpty(loginCode)) return;
+
+        try
+        {
+            var httpClient = HttpClientFactory.CreateClient("Project400API");
+            var result = await httpClient.GetFromJsonAsync<AdminLoginCheckResponse>(
+                $"/api/auth/admin-login/check/{loginCode}");
+
+            if (result?.Status == "consumed" && !string.IsNullOrEmpty(result.UserId))
+            {
+                loginComplete = true;
+                pollTimer?.Dispose();
+                countdownTimer?.Dispose();
+                await InvokeAsync(StateHasChanged);
+
+                var signinUrl = $"/auth/admin-signin?userId={Uri.EscapeDataString(result.UserId)}&displayName={Uri.EscapeDataString(result.DisplayName ?? "Admin")}&username={Uri.EscapeDataString(result.Username ?? "admin")}";
+                await InvokeAsync(() => Navigation.NavigateTo(signinUrl, forceLoad: true));
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private class LoginOptionsResult
+    {
+        public string OptionsJson { get; set; } = "";
+    }
+
+    private class DirectLoginResult
+    {
+        public string UserId { get; set; } = "";
+        public string? DisplayName { get; set; }
+        public string? Username { get; set; }
+    }
+
+    private class AdminLoginStartResponse
+    {
+        public string Code { get; set; } = "";
+        public string QrUrl { get; set; } = "";
+        public string QrImageBase64 { get; set; } = "";
+    }
+
+    private class AdminLoginCheckResponse
+    {
+        public string Status { get; set; } = "";
+        public string? UserId { get; set; }
+        public string? DisplayName { get; set; }
+        public string? Username { get; set; }
+    }
+}

@@ -1,0 +1,282 @@
+@page "/mobile-register"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@inject ILogger<MobileRegister> Logger
+@inject IConfiguration Configuration
+
+<PageTitle>Mobile Registration - Project 400</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-4">
+    @if (isRedirecting)
+    {
+        <MudPaper Class="pa-4 text-center">
+            <MudProgressCircular Indeterminate="true" />
+            <MudText Class="mt-2">Redirecting to secure domain...</MudText>
+        </MudPaper>
+    }
+    else if (isLoading)
+    {
+        <MudPaper Class="pa-4 text-center">
+            <MudProgressCircular Indeterminate="true" />
+            <MudText Class="mt-2">Checking registration link...</MudText>
+        </MudPaper>
+    }
+    else if (!isValid)
+    {
+        <MudPaper Class="pa-4">
+            <MudAlert Severity="Severity.Error">
+                <MudText Typo="Typo.h6">Invalid or Expired Link</MudText>
+                <MudText>This registration link is invalid or has expired. Please request a new QR code.</MudText>
+            </MudAlert>
+        </MudPaper>
+    }
+    else if (isCompleted)
+    {
+        <MudPaper Class="pa-4 text-center">
+            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Large" Class="mb-2" />
+            <MudAlert Severity="Severity.Success">
+                <MudText Typo="Typo.h6">Registration Complete!</MudText>
+                <MudText>Your passkey has been successfully set up.</MudText>
+                <MudText Class="mt-2">You can now close this page. Your admin will assign your keycard.</MudText>
+            </MudAlert>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       OnClick="CloseWindow"
+                       Class="mt-4"
+                       StartIcon="@Icons.Material.Filled.Close">
+                Close This Page
+            </MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        <MudPaper Class="pa-4">
+            <MudText Typo="Typo.h4" Align="Align.Center" GutterBottom="true">
+                <MudIcon Icon="@Icons.Material.Filled.Fingerprint" Size="Size.Large" Color="Color.Primary" />
+            </MudText>
+            <MudText Typo="Typo.h5" Align="Align.Center" GutterBottom="true">
+                Register Your Passkey
+            </MudText>
+            
+            <MudDivider Class="my-4" />
+            
+            <MudText Typo="Typo.body1" Class="mb-2">
+                <strong>Employee:</strong> @displayName
+            </MudText>
+            <MudText Typo="Typo.body2" Class="mb-4">
+                <strong>Username:</strong> @username
+            </MudText>
+            
+            <MudAlert Severity="Severity.Info" Class="mb-4">
+                You are about to register a passkey using your device's biometric authentication
+                (fingerprint or face recognition). This enables secure, passwordless door access.
+            </MudAlert>
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       Size="Size.Large"
+                       OnClick="RegisterPasskey"
+                       Disabled="@isRegistering"
+                       Class="mt-2">
+                @if (isRegistering)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <text>Setting up biometric...</text>
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Fingerprint" Class="mr-2" />
+                    <text>Register with Biometric</text>
+                }
+            </MudButton>
+
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Class="mt-4">@errorMessage</MudAlert>
+            }
+
+            <MudText Typo="Typo.caption" Align="Align.Center" Class="mt-4">
+                Supported browsers: Chrome, Safari, or Edge on mobile.
+            </MudText>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    [SupplyParameterFromQuery(Name = "code")]
+    public string? RegistrationCode { get; set; }
+
+    private bool isLoading = true;
+    private bool isRedirecting = false;
+    private bool isValid = false;
+    private bool isRegistering = false;
+    private bool isCompleted = false;
+    private string username = "";
+    private string displayName = "";
+    private string errorMessage = "";
+    private bool _initialized = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrEmpty(RegistrationCode))
+        {
+            var uri = new Uri(Navigation.Uri);
+            var queryString = uri.Query;
+            if (queryString.Contains("code="))
+            {
+                var codeParam = queryString.Split('&').FirstOrDefault(q => q.Contains("code="));
+                if (codeParam != null)
+                {
+                    RegistrationCode = codeParam.Split('=')[1];
+                }
+            }
+        }
+
+        if (string.IsNullOrEmpty(RegistrationCode))
+        {
+            isLoading = false;
+            errorMessage = "No registration code provided in URL";
+            return;
+        }
+
+        await ValidateRegistrationCode();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _initialized) return;
+        _initialized = true;
+
+        var currentUrl = await JS.InvokeAsync<string>("eval", "window.location.href");
+        if (!string.IsNullOrEmpty(currentUrl) && !currentUrl.Contains("eunanmurray.ie"))
+        {
+            var targetDomain = Configuration["WebAppUrl"]?.TrimEnd('/') ?? "https://www.eunanmurray.ie";
+            if (targetDomain.Contains("azurecontainerapps.io"))
+            {
+                targetDomain = "https://www.eunanmurray.ie";
+            }
+            var uri = new Uri(currentUrl);
+            var redirectUrl = $"{targetDomain}{uri.PathAndQuery}";
+            Logger.LogInformation("Redirecting from {Current} to {Target} for WebAuthn domain compatibility", currentUrl, redirectUrl);
+            isRedirecting = true;
+            StateHasChanged();
+            await JS.InvokeVoidAsync("eval", $"window.location.href = '{redirectUrl}'");
+            return;
+        }
+    }
+
+    private async Task ValidateRegistrationCode()
+    {
+        try
+        {
+            var httpClient = HttpClientFactory.CreateClient("Project400API");
+            var response = await httpClient.GetAsync($"/api/auth/validate-qr/{RegistrationCode}");
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<ValidateQRResponse>();
+                if (result != null && result.Valid)
+                {
+                    username = result.Username;
+                    displayName = result.DisplayName;
+                    isValid = true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Validation error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RegisterPasskey()
+    {
+        isRegistering = true;
+        errorMessage = "";
+
+        try
+        {
+            var isSupported = await JS.InvokeAsync<bool>("webAuthn.isSupported");
+            if (!isSupported)
+            {
+                errorMessage = "WebAuthn is not supported on this device/browser. Please use Chrome, Safari, or Edge.";
+                return;
+            }
+
+            var httpClient = HttpClientFactory.CreateClient("Project400API");
+
+            var optionsRequest = new RegisterOptionsRequest
+            {
+                Username = username,
+                DisplayName = displayName
+            };
+
+            var optionsResponse = await httpClient.PostAsJsonAsync("/api/auth/register-options", optionsRequest);
+            if (!optionsResponse.IsSuccessStatusCode)
+            {
+                errorMessage = "Failed to start registration. Please try again.";
+                return;
+            }
+
+            var optionsResult = await optionsResponse.Content.ReadFromJsonAsync<RegisterOptionsResponse>();
+            if (optionsResult == null || string.IsNullOrEmpty(optionsResult.OptionsJson))
+            {
+                errorMessage = "Invalid response from server.";
+                return;
+            }
+
+            string attestationResponse;
+            try
+            {
+                attestationResponse = await JS.InvokeAsync<string>(
+                    "webAuthn.createCredential",
+                    optionsResult.OptionsJson);
+            }
+            catch (JSException jsEx)
+            {
+                errorMessage = $"Biometric registration cancelled or failed: {jsEx.Message}";
+                return;
+            }
+
+            var registerRequest = new RegisterRequest
+            {
+                Username = username,
+                AttestationResponse = attestationResponse
+            };
+
+            var registerResponse = await httpClient.PostAsJsonAsync("/api/auth/register", registerRequest);
+            var registerResult = await registerResponse.Content.ReadFromJsonAsync<RegisterResponse>();
+
+            if (registerResult?.Success == true)
+            {
+                isCompleted = true;
+            }
+            else
+            {
+                errorMessage = registerResult?.Message ?? "Registration failed. Please try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isRegistering = false;
+        }
+    }
+
+    private async Task CloseWindow()
+    {
+        await JS.InvokeVoidAsync("eval", "window.close(); setTimeout(function(){ window.location.href = 'about:blank'; }, 500);");
+    }
+}

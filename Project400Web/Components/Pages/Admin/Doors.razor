@@ -1,0 +1,181 @@
+@page "/admin/doors"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@inject IHttpClientFactory HttpClientFactory
+@inject ISnackbar Snackbar
+@rendermode InteractiveServer
+
+<PageTitle>Doors - Smart Access</PageTitle>
+
+<div class="page-header">
+    <div>
+        <MudText Typo="Typo.h4">Doors</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">View and manage all registered door devices</MudText>
+    </div>
+    <MudButton Variant="Variant.Filled"
+               Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick="@(() => showAddForm = !showAddForm)">
+        Add Door
+    </MudButton>
+</div>
+
+@if (showAddForm)
+{
+    <MudPaper Elevation="0" Class="pa-6 mb-6" Style="border: 1px solid rgba(0,0,0,0.08);">
+        <MudText Typo="Typo.h6" Class="section-heading mb-4">Register New Door</MudText>
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="5">
+                <MudTextField @bind-Value="newDoorName" Label="Door Name" Variant="Variant.Outlined"
+                              Placeholder="e.g., Main Entrance"
+                              HelperText="A friendly name for this door" />
+            </MudItem>
+            <MudItem xs="12" md="5">
+                <MudTextField @bind-Value="newDeviceId" Label="Device ID (ESP32)" Variant="Variant.Outlined"
+                              Placeholder="e.g., esp32-001" Class="font-mono" />
+            </MudItem>
+            <MudItem xs="12" md="2" Class="d-flex align-end">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" OnClick="AddDoor" Disabled="@isAdding">
+                    @if (isAdding)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                    }
+                    else
+                    {
+                        <text>Add</text>
+                    }
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+}
+
+<MudTable Items="@filteredDoors" Loading="@isLoading" Hover="true" Elevation="0"
+          Style="border: 1px solid rgba(0,0,0,0.08);">
+    <ToolBarContent>
+        <MudTextField @bind-Value="searchQuery" Placeholder="Search doors..." Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true"
+                      DebounceInterval="300" Style="max-width: 300px;" />
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="LoadDoors" />
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Door Name</MudTh>
+        <MudTh>Device ID</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh>Created</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Door Name">
+            <MudText Typo="Typo.body2"><strong>@context.DoorName</strong></MudText>
+        </MudTd>
+        <MudTd DataLabel="Device ID">
+            <MudText Typo="Typo.body2" Class="font-mono" Color="Color.Secondary">@context.DeviceId</MudText>
+        </MudTd>
+        <MudTd DataLabel="Status">
+            @if (context.IsActive)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">Active</MudChip>
+            }
+            else
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">Inactive</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Created">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">@FormatRelativeTime(context.CreatedAt)</MudText>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <div class="pa-8 text-center">
+            <MudIcon Icon="@Icons.Material.Filled.MeetingRoom" Size="Size.Large" Color="Color.Secondary" />
+            <MudText Typo="Typo.body1" Class="mt-2" Color="Color.Secondary">No doors found</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Get started by adding your first door device.</MudText>
+        </div>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private List<DoorDto> doors = new();
+    private string newDoorName = "";
+    private string newDeviceId = "";
+    private string searchQuery = "";
+    private bool isLoading = false;
+    private bool isAdding = false;
+    private bool showAddForm = false;
+    private HttpClient Http => HttpClientFactory.CreateClient("Project400API");
+
+    private IEnumerable<DoorDto> filteredDoors => string.IsNullOrWhiteSpace(searchQuery)
+        ? doors
+        : doors.Where(d => d.DoorName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
+                        || d.DeviceId.Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDoors();
+    }
+
+    private async Task LoadDoors()
+    {
+        isLoading = true;
+        try
+        {
+            var response = await Http.GetFromJsonAsync<List<DoorDto>>("/api/admin/doors");
+            doors = response ?? new();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading doors: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task AddDoor()
+    {
+        if (string.IsNullOrWhiteSpace(newDoorName) || string.IsNullOrWhiteSpace(newDeviceId))
+        {
+            Snackbar.Add("Please fill in all fields", Severity.Warning);
+            return;
+        }
+
+        isAdding = true;
+        try
+        {
+            var response = await Http.PostAsJsonAsync($"/api/admin/doors?doorName={Uri.EscapeDataString(newDoorName)}&deviceId={Uri.EscapeDataString(newDeviceId)}", new { });
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"Door '{newDoorName}' added", Severity.Success);
+                newDoorName = "";
+                newDeviceId = "";
+                showAddForm = false;
+                await LoadDoors();
+            }
+            else
+            {
+                Snackbar.Add("Failed to add door", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            isAdding = false;
+        }
+    }
+
+    private string FormatRelativeTime(DateTime utcTime)
+    {
+        var diff = DateTime.UtcNow - utcTime;
+        if (diff.TotalMinutes < 1) return "just now";
+        if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 30) return $"{(int)diff.TotalDays}d ago";
+        return utcTime.ToLocalTime().ToString("dd MMM yyyy");
+    }
+}

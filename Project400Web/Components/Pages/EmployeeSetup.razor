@@ -1,0 +1,427 @@
+@page "/employee-setup"
+@rendermode InteractiveServer
+@implements IDisposable
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@inject IHttpClientFactory HttpClientFactory
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Employee Setup - Smart Access</PageTitle>
+
+<div class="page-header">
+    <div>
+        <MudText Typo="Typo.h4">Employee Setup</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">Onboard a new employee in three quick steps</MudText>
+    </div>
+</div>
+
+@* Step indicator *@
+<MudPaper Elevation="0" Class="pa-4 mb-6" Style="border: 1px solid rgba(0,0,0,0.08);">
+    <MudGrid Spacing="2">
+        <MudItem xs="4">
+            <div class="d-flex align-center">
+                <MudAvatar Size="Size.Small"
+                           Color="@(currentStep >= 0 ? Color.Primary : Color.Default)"
+                           Variant="Variant.Filled">
+                    @if (currentStep > 0)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" />
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">1</MudText>
+                    }
+                </MudAvatar>
+                <MudText Typo="Typo.body2" Class="ml-2 step-label-text"
+                         Color="@(currentStep >= 0 ? Color.Primary : Color.Secondary)">
+                    Employee Info
+                </MudText>
+            </div>
+        </MudItem>
+        <MudItem xs="4">
+            <div class="d-flex align-center">
+                <MudAvatar Size="Size.Small"
+                           Color="@(currentStep >= 1 ? Color.Primary : Color.Default)"
+                           Variant="Variant.Filled">
+                    @if (currentStep > 1)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" />
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">2</MudText>
+                    }
+                </MudAvatar>
+                <MudText Typo="Typo.body2" Class="ml-2 step-label-text"
+                         Color="@(currentStep >= 1 ? Color.Primary : Color.Secondary)">
+                    Passkey Setup
+                </MudText>
+            </div>
+        </MudItem>
+        <MudItem xs="4">
+            <div class="d-flex align-center">
+                <MudAvatar Size="Size.Small"
+                           Color="@(currentStep >= 2 ? Color.Primary : Color.Default)"
+                           Variant="Variant.Filled">
+                    <MudText Typo="Typo.body2">3</MudText>
+                </MudAvatar>
+                <MudText Typo="Typo.body2" Class="ml-2 step-label-text"
+                         Color="@(currentStep >= 2 ? Color.Primary : Color.Secondary)">
+                    Assign Keycard
+                </MudText>
+            </div>
+        </MudItem>
+    </MudGrid>
+    <MudProgressLinear Color="Color.Primary" Value="@((currentStep / 2.0) * 100)" Class="mt-3" Rounded="true" Size="Size.Small" />
+</MudPaper>
+
+@* Step 1: Enter Details *@
+@if (currentStep == 0)
+{
+    <MudPaper Elevation="0" Class="pa-6" Style="border: 1px solid rgba(0,0,0,0.08);">
+        <MudText Typo="Typo.h6" Class="section-heading mb-4">Step 1: Employee Information</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+            Provide the employee's details below. A QR code will be generated for mobile passkey registration.
+        </MudText>
+
+        <MudForm @ref="userForm">
+            <MudTextField @bind-Value="username"
+                          Label="Username"
+                          Required="true"
+                          Variant="Variant.Outlined"
+                          Class="mb-3" />
+            <MudTextField @bind-Value="displayName"
+                          Label="Display Name"
+                          Required="true"
+                          Variant="Variant.Outlined" />
+        </MudForm>
+
+        <div class="d-flex justify-end mt-6">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       OnClick="HandleQRGeneration"
+                       Disabled="@isProcessing"
+                       EndIcon="@Icons.Material.Filled.ArrowForward">
+                @if (isProcessing)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <text>Generating QR...</text>
+                }
+                else
+                {
+                    <text>Continue</text>
+                }
+            </MudButton>
+        </div>
+
+        @if (!string.IsNullOrEmpty(step1Message))
+        {
+            <MudAlert Severity="@step1Severity" Class="mt-4">@step1Message</MudAlert>
+        }
+    </MudPaper>
+}
+
+@* Step 2: QR Registration *@
+@if (currentStep == 1)
+{
+    <MudPaper Elevation="0" Class="pa-6" Style="border: 1px solid rgba(0,0,0,0.08);">
+        <MudText Typo="Typo.h6" Class="section-heading mb-4">Step 2: Passkey Registration</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+            Have the employee scan the QR code on their phone to set up biometric authentication.
+        </MudText>
+
+        <div class="d-flex justify-center">
+            <MudPaper Class="pa-6" Elevation="0" Style="background-color: white; border: 1px solid #e0e0e0; display: inline-block;">
+                <img src="data:image/png;base64,@qrCodeBase64" alt="Registration QR Code"
+                     style="width: 280px; height: 280px; max-width: 100%; display: block;" />
+            </MudPaper>
+        </div>
+
+        <div class="d-flex justify-center mt-4">
+            <MudChip T="string" Color="Color.Warning" Size="Size.Medium" Icon="@Icons.Material.Filled.Timer">
+                Expires in @expiresInMinutes minutes
+            </MudChip>
+        </div>
+
+        @* Auto-poll status *@
+        <MudPaper Elevation="0" Class="pa-4 mt-4" Style="border: 1px solid rgba(0,0,0,0.08);">
+            <div class="d-flex align-center">
+                @if (userRegistered)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Class="mr-3" />
+                    <div>
+                        <MudText Typo="Typo.subtitle2" Color="Color.Success">Passkey registered successfully</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Biometric credential stored on device</MudText>
+                    </div>
+                }
+                else
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Primary" Class="mr-3" />
+                    <div>
+                        <MudText Typo="Typo.subtitle2">Waiting for employee to complete registration...</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Checking automatically every few seconds</MudText>
+                    </div>
+                }
+            </div>
+        </MudPaper>
+
+        <div class="d-flex flex-wrap justify-space-between mt-6" style="gap: 12px;">
+            <MudButton Variant="Variant.Text"
+                       Color="Color.Secondary"
+                       OnClick="GoBack"
+                       StartIcon="@Icons.Material.Filled.ArrowBack">
+                Back
+            </MudButton>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       OnClick="GoToStep3"
+                       Disabled="@(!userRegistered)"
+                       EndIcon="@Icons.Material.Filled.ArrowForward">
+                Continue
+            </MudButton>
+        </div>
+    </MudPaper>
+}
+
+@* Step 3: Assign Keycard *@
+@if (currentStep == 2)
+{
+    <MudPaper Elevation="0" Class="pa-6" Style="border: 1px solid rgba(0,0,0,0.08);">
+        <MudText Typo="Typo.h6" Class="section-heading mb-4">Step 3: Assign Keycard</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+            Assign a physical RFID keycard to <strong>@displayName</strong> (@username)
+        </MudText>
+
+        <MudAlert Severity="Severity.Info" Class="mb-4" Variant="Variant.Outlined">
+            <strong>How to get the Card UID:</strong><br />
+            1. Swipe the card at the door reader<br />
+            2. Check the ESP32 serial monitor for the card UID<br />
+            3. Enter it below in format: <code>XX:XX:XX:XX</code>
+        </MudAlert>
+
+        <MudForm @ref="keycardForm">
+            <MudTextField @bind-Value="cardUid"
+                          Label="Card UID"
+                          Required="true"
+                          Variant="Variant.Outlined"
+                          Placeholder="e.g., 04:5A:3B:C2"
+                          HelperText="Format: XX:XX:XX:XX (hex values)"
+                          Class="font-mono" />
+        </MudForm>
+
+        <div class="d-flex flex-wrap justify-space-between mt-6" style="gap: 12px;">
+            <MudButton Variant="Variant.Text"
+                       Color="Color.Secondary"
+                       OnClick="GoBackToStep2"
+                       StartIcon="@Icons.Material.Filled.ArrowBack">
+                Back
+            </MudButton>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       OnClick="HandleKeycardAssignment"
+                       Disabled="@isProcessing"
+                       EndIcon="@Icons.Material.Filled.Check">
+                @if (isProcessing)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <text>Assigning...</text>
+                }
+                else
+                {
+                    <text>Assign Keycard</text>
+                }
+            </MudButton>
+        </div>
+
+        @if (!string.IsNullOrEmpty(step2Message))
+        {
+            <MudAlert Severity="@step2Severity" Class="mt-4">@step2Message</MudAlert>
+        }
+    </MudPaper>
+}
+
+@code {
+    private int currentStep = 0;
+    private MudForm? userForm;
+    private MudForm? keycardForm;
+
+    private string username = "";
+    private string displayName = "";
+    private string qrCodeBase64 = "";
+    private int expiresInMinutes = 0;
+    private Guid userId = Guid.Empty;
+    private bool userRegistered = false;
+
+    private string cardUid = "";
+
+    private bool isProcessing = false;
+
+    private string step1Message = "";
+    private Severity step1Severity = Severity.Info;
+
+    private string step2Message = "";
+    private Severity step2Severity = Severity.Info;
+
+    private System.Threading.Timer? pollTimer;
+
+    public void Dispose()
+    {
+        pollTimer?.Dispose();
+    }
+
+    private void GoBack()
+    {
+        pollTimer?.Dispose();
+        currentStep = 0;
+    }
+
+    private void GoBackToStep2()
+    {
+        currentStep = 1;
+        StartPolling();
+    }
+
+    private void GoToStep3()
+    {
+        pollTimer?.Dispose();
+        currentStep = 2;
+    }
+
+    private void StartPolling()
+    {
+        pollTimer?.Dispose();
+        pollTimer = new System.Threading.Timer(async _ =>
+        {
+            await PollForRegistration();
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private async Task PollForRegistration()
+    {
+        try
+        {
+            var httpClient = HttpClientFactory.CreateClient("Project400API");
+            var result = await httpClient.GetFromJsonAsync<CheckRegistrationResponse>(
+                $"/api/admin/users/check/{Uri.EscapeDataString(username)}");
+
+            if (result?.Registered == true)
+            {
+                userId = result.Id;
+                userRegistered = true;
+                pollTimer?.Dispose();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private class CheckRegistrationResponse
+    {
+        public bool Registered { get; set; }
+        public Guid Id { get; set; }
+    }
+
+    private async Task HandleQRGeneration()
+    {
+        step1Message = "";
+        isProcessing = true;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(displayName))
+            {
+                step1Message = "Please enter both username and display name";
+                step1Severity = Severity.Warning;
+                return;
+            }
+
+            var httpClient = HttpClientFactory.CreateClient("Project400API");
+            var request = new { Username = username, DisplayName = displayName };
+            var response = await httpClient.PostAsJsonAsync("/api/auth/generate-qr", request);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                step1Message = $"Failed to generate QR code: {response.StatusCode}";
+                step1Severity = Severity.Error;
+                return;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<GenerateQRResponse>();
+            if (result != null)
+            {
+                qrCodeBase64 = result.QRCodeBase64;
+                expiresInMinutes = result.ExpiresInMinutes;
+                currentStep = 1;
+                userRegistered = false;
+                StartPolling();
+            }
+        }
+        catch (Exception ex)
+        {
+            step1Message = $"Error: {ex.Message}";
+            step1Severity = Severity.Error;
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private async Task HandleKeycardAssignment()
+    {
+        step2Message = "";
+        isProcessing = true;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(cardUid))
+            {
+                step2Message = "Please enter a card UID";
+                step2Severity = Severity.Warning;
+                return;
+            }
+
+            var httpClient = HttpClientFactory.CreateClient("Project400API");
+            var response = await httpClient.PostAsync($"/api/admin/keycards?cardUid={cardUid}&userId={userId}", null);
+
+            if (response.IsSuccessStatusCode)
+            {
+                Snackbar.Add($"{displayName} is fully set up with keycard {cardUid}", Severity.Success);
+                SetupAnotherEmployee();
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                step2Message = $"Failed to assign keycard: {error}";
+                step2Severity = Severity.Error;
+            }
+        }
+        catch (Exception ex)
+        {
+            step2Message = $"Error: {ex.Message}";
+            step2Severity = Severity.Error;
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private void SetupAnotherEmployee()
+    {
+        username = "";
+        displayName = "";
+        qrCodeBase64 = "";
+        expiresInMinutes = 0;
+        userId = Guid.Empty;
+        userRegistered = false;
+        cardUid = "";
+        step1Message = "";
+        step2Message = "";
+        currentStep = 0;
+        pollTimer?.Dispose();
+    }
+}

@@ -1,0 +1,95 @@
+@page "/unlock-complete"
+
+<PageTitle>Unlock Complete</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-8">
+    <MudCard>
+        <MudCardContent>
+            <div class="d-flex flex-column align-center pa-4">
+                @switch (Status)
+                {
+                    case "approved":
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle"
+                                 Style="font-size: 96px; color: #2E7D32;" Class="mb-4" />
+                        <MudText Typo="Typo.h4" Align="Align.Center" GutterBottom="true">
+                            Door Unlocked
+                        </MudText>
+                        @if (!string.IsNullOrEmpty(Door))
+                        {
+                            <MudText Typo="Typo.h6" Color="Color.Secondary" Align="Align.Center" GutterBottom="true">
+                                @Door
+                            </MudText>
+                        }
+                        <MudText Typo="Typo.body1" Align="Align.Center" Class="mt-2">
+                            Access has been granted. You can now close this page.
+                        </MudText>
+                        break;
+
+                    case "denied":
+                        <MudIcon Icon="@Icons.Material.Filled.Cancel"
+                                 Style="font-size: 96px; color: #C62828;" Class="mb-4" />
+                        <MudText Typo="Typo.h4" Align="Align.Center" GutterBottom="true">
+                            Request Denied
+                        </MudText>
+                        <MudText Typo="Typo.body1" Align="Align.Center" Class="mt-2">
+                            The unlock request was denied. You can now close this page.
+                        </MudText>
+                        break;
+
+                    case "expired":
+                        <MudIcon Icon="@Icons.Material.Filled.AccessTime"
+                                 Style="font-size: 96px; color: #ED6C02;" Class="mb-4" />
+                        <MudText Typo="Typo.h4" Align="Align.Center" GutterBottom="true">
+                            Request Expired
+                        </MudText>
+                        <MudText Typo="Typo.body1" Align="Align.Center" Class="mt-2">
+                            This unlock request has expired. Tap your card at the door again to retry.
+                        </MudText>
+                        break;
+
+                    case "failed":
+                        <MudIcon Icon="@Icons.Material.Filled.ErrorOutline"
+                                 Style="font-size: 96px; color: #C62828;" Class="mb-4" />
+                        <MudText Typo="Typo.h4" Align="Align.Center" GutterBottom="true">
+                            Something Went Wrong
+                        </MudText>
+                        @if (!string.IsNullOrEmpty(Message))
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Align="Align.Center" Class="mt-2">
+                                @Message
+                            </MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body1" Align="Align.Center" Class="mt-2">
+                                The unlock could not be completed. Tap your card at the door again to retry.
+                            </MudText>
+                        }
+                        break;
+
+                    default:
+                        <MudIcon Icon="@Icons.Material.Filled.Info"
+                                 Style="font-size: 96px; color: #0D7377;" Class="mb-4" />
+                        <MudText Typo="Typo.h4" Align="Align.Center" GutterBottom="true">
+                            Unlock Complete
+                        </MudText>
+                        <MudText Typo="Typo.body1" Align="Align.Center" Class="mt-2">
+                            You can now close this page.
+                        </MudText>
+                        break;
+                }
+            </div>
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? Status { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Door { get; set; }
+
+    [SupplyParameterFromQuery]
+    public string? Message { get; set; }
+}

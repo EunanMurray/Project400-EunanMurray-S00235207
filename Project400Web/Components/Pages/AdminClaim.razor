@@ -1,0 +1,133 @@
+@page "/admin-claim/{Code}"
+@rendermode InteractiveServer
+@inject IHttpClientFactory HttpClientFactory
+@inject IJSRuntime JS
+
+<PageTitle>Admin Claim - Smart Access</PageTitle>
+
+<div class="d-flex justify-center mt-4 mt-sm-8 px-2">
+    <MudPaper Elevation="2" Class="pa-4 pa-sm-8" Style="max-width: 480px; width: 100%;">
+        <MudText Typo="Typo.h5" Align="Align.Center" Class="mb-2">Admin Authentication</MudText>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-4">@errorMessage</MudAlert>
+        }
+
+        @if (claimComplete)
+        {
+            <MudAlert Severity="Severity.Success" Class="mb-4">
+                Login approved — return to your laptop.
+            </MudAlert>
+        }
+        else if (isProcessing)
+        {
+            <div class="d-flex flex-column align-center pa-4">
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+                <MudText Typo="Typo.body1">Verifying your passkey...</MudText>
+            </div>
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Align="Align.Center" Class="mb-4">
+                Enter your username and authenticate with your passkey to approve the admin login.
+            </MudText>
+
+            <MudTextField @bind-Value="username"
+                          Label="Username"
+                          Variant="Variant.Outlined"
+                          Class="mb-4" />
+
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       FullWidth="true"
+                       Size="Size.Large"
+                       OnClick="AuthenticateAndClaim"
+                       Disabled="@(string.IsNullOrWhiteSpace(username))"
+                       StartIcon="@Icons.Material.Filled.Fingerprint">
+                Authenticate with Passkey
+            </MudButton>
+        }
+    </MudPaper>
+</div>
+
+@code {
+    [Parameter]
+    public string Code { get; set; } = "";
+
+    private string username = "";
+    private string errorMessage = "";
+    private bool isProcessing = false;
+    private bool claimComplete = false;
+
+    private async Task AuthenticateAndClaim()
+    {
+        errorMessage = "";
+        isProcessing = true;
+
+        try
+        {
+            var httpClient = HttpClientFactory.CreateClient("Project400API");
+
+            var loginOptionsResponse = await httpClient.PostAsJsonAsync(
+                "/api/auth/login-options",
+                new { Username = username });
+
+            if (!loginOptionsResponse.IsSuccessStatusCode)
+            {
+                errorMessage = "Failed to get login options. Check your username.";
+                return;
+            }
+
+            var loginOptions = await loginOptionsResponse.Content.ReadFromJsonAsync<LoginOptionsResult>();
+            if (loginOptions == null || string.IsNullOrEmpty(loginOptions.OptionsJson))
+            {
+                errorMessage = "Invalid login options response";
+                return;
+            }
+
+            var assertionJson = await JS.InvokeAsync<string>("webAuthn.getCredential", loginOptions.OptionsJson);
+            if (string.IsNullOrEmpty(assertionJson))
+            {
+                errorMessage = "Passkey authentication was cancelled or failed";
+                return;
+            }
+
+            var claimPayload = new { Username = username, AssertionResponse = assertionJson };
+            var claimResponse = await httpClient.PostAsJsonAsync(
+                $"/api/auth/admin-login/claim/{Code}",
+                claimPayload);
+
+            if (claimResponse.IsSuccessStatusCode)
+            {
+                claimComplete = true;
+            }
+            else if ((int)claimResponse.StatusCode == 403)
+            {
+                errorMessage = "You are not an admin";
+            }
+            else if ((int)claimResponse.StatusCode == 410)
+            {
+                errorMessage = "This login code has expired. Please generate a new QR code.";
+            }
+            else
+            {
+                var error = await claimResponse.Content.ReadAsStringAsync();
+                errorMessage = $"Authentication failed: {error}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private class LoginOptionsResult
+    {
+        public string OptionsJson { get; set; } = "";
+    }
+}

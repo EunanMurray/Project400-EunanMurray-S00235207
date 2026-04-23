@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "https": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "https://localhost:17197;http://localhost:15149",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DOTNET_ENVIRONMENT": "Development",
+        "DOTNET_ASPIRE_CONTAINER_RUNTIME": "docker",
+        "DOCKER_CLIENT_TIMEOUT": "600",
+        "COMPOSE_HTTP_TIMEOUT": "600",
+        "ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL": "https://localhost:21171",
+        "ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL": "https://localhost:22264"
+      }
+    },
+    "http": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "applicationUrl": "http://localhost:15149",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "DOTNET_ENVIRONMENT": "Development",
+        "DOTNET_ASPIRE_CONTAINER_RUNTIME": "docker",
+        "DOCKER_CLIENT_TIMEOUT": "600",
+        "COMPOSE_HTTP_TIMEOUT": "600",
+        "ASPIRE_DASHBOARD_OTLP_ENDPOINT_URL": "http://localhost:19157",
+        "ASPIRE_RESOURCE_SERVICE_ENDPOINT_URL": "http://localhost:20232"
+      }
+    }
+  }
+}

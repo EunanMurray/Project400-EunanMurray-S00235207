@@ -1,0 +1,134 @@
+@page "/admin/users"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@inject IHttpClientFactory HttpClientFactory
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>Employees - Smart Access</PageTitle>
+
+<div class="page-header">
+    <div>
+        <MudText Typo="Typo.h4">Users</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">Registered employees and their credential status</MudText>
+    </div>
+</div>
+
+<MudTable Items="@filteredUsers" Loading="@isLoading" Hover="true" Elevation="0"
+          Style="border: 1px solid rgba(0,0,0,0.08);">
+    <ToolBarContent>
+        <MudTextField @bind-Value="searchQuery" Placeholder="Search users..." Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true"
+                      DebounceInterval="300" Style="max-width: 300px;" />
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="LoadUsers" />
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Display Name</MudTh>
+        <MudTh>Username</MudTh>
+        <MudTh>User ID</MudTh>
+        <MudTh>Passkeys</MudTh>
+        <MudTh>Registered</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Display Name">
+            <MudText Typo="Typo.body2"><strong>@context.DisplayName</strong></MudText>
+        </MudTd>
+        <MudTd DataLabel="Username">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">@context.Username</MudText>
+        </MudTd>
+        <MudTd DataLabel="User ID">
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Default"
+                       OnClick="@(() => CopyToClipboard(context.Id.ToString()))">
+                <span class="font-mono">@context.Id.ToString()[..8]...</span>
+                <MudIcon Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small" Class="ml-1" />
+            </MudButton>
+        </MudTd>
+        <MudTd DataLabel="Passkeys">
+            @if (context.CredentialCount > 0)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">@context.CredentialCount</MudChip>
+            }
+            else
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">None</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Registered">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">@FormatRelativeTime(context.CreatedAt)</MudText>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <div class="pa-8 text-center">
+            <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Large" Color="Color.Secondary" />
+            <MudText Typo="Typo.body1" Class="mt-2" Color="Color.Secondary">No employees registered</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Head to Employee Setup to onboard your first user.</MudText>
+        </div>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private List<UserDto> users = new();
+    private string searchQuery = "";
+    private bool isLoading = false;
+    private HttpClient Http => HttpClientFactory.CreateClient("Project400API");
+
+    private IEnumerable<UserDto> filteredUsers => string.IsNullOrWhiteSpace(searchQuery)
+        ? users
+        : users.Where(u => u.DisplayName.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
+                        || u.Username.Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        isLoading = true;
+        try
+        {
+            var response = await Http.GetFromJsonAsync<List<UserDto>>("/api/admin/users");
+            users = response ?? new();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading users: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task CopyToClipboard(string text)
+    {
+        try
+        {
+            var success = await JS.InvokeAsync<bool>("clipboardUtils.copyToClipboard", text);
+            if (success)
+            {
+                Snackbar.Add($"User ID copied", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Failed to copy to clipboard", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Copy failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private string FormatRelativeTime(DateTime utcTime)
+    {
+        var diff = DateTime.UtcNow - utcTime;
+        if (diff.TotalMinutes < 1) return "just now";
+        if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 30) return $"{(int)diff.TotalDays}d ago";
+        return utcTime.ToLocalTime().ToString("dd MMM yyyy");
+    }
+}

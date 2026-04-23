@@ -1,0 +1,137 @@
+@page "/admin/audit-logs"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@inject IHttpClientFactory HttpClientFactory
+@inject ISnackbar Snackbar
+@rendermode InteractiveServer
+
+<PageTitle>Audit Logs - Smart Access</PageTitle>
+
+<div class="page-header">
+    <div>
+        <MudText Typo="Typo.h4">Audit Logs</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">Security event history for all door access activity</MudText>
+    </div>
+    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="LoadLogs"
+               StartIcon="@Icons.Material.Filled.Refresh">
+        Refresh
+    </MudButton>
+</div>
+
+<MudTable Items="@filteredLogs" Loading="@isLoading" Hover="true" Elevation="0"
+          Dense="true" Style="border: 1px solid rgba(0,0,0,0.08);">
+    <ToolBarContent>
+        <MudTextField @bind-Value="searchQuery" Placeholder="Search events..." Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true"
+                      DebounceInterval="300" Style="max-width: 300px;" />
+        <MudSpacer />
+        <MudSelect T="string" @bind-Value="filterEventType" Label="Event Type" Variant="Variant.Outlined"
+                   Margin="Margin.Dense" Style="max-width: 200px;" Clearable="true">
+            @foreach (var et in eventTypes)
+            {
+                <MudSelectItem Value="@et">@et</MudSelectItem>
+            }
+        </MudSelect>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Time</MudTh>
+        <MudTh>Event</MudTh>
+        <MudTh>Result</MudTh>
+        <MudTh>Device</MudTh>
+        <MudTh>Details</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Time">
+            <MudText Typo="Typo.body2">@context.Timestamp.ToLocalTime().ToString("dd MMM HH:mm:ss")</MudText>
+        </MudTd>
+        <MudTd DataLabel="Event">
+            <MudChip T="string" Size="Size.Small" Color="@GetEventColor(context.EventType)" Variant="Variant.Text">
+                @context.EventType
+            </MudChip>
+        </MudTd>
+        <MudTd DataLabel="Result">
+            <MudChip T="string" Size="Size.Small"
+                     Color="@(context.Result == "Success" ? Color.Success : context.Result == "Alert" ? Color.Warning : Color.Error)"
+                     Variant="Variant.Text">
+                @context.Result
+            </MudChip>
+        </MudTd>
+        <MudTd DataLabel="Device">
+            <MudText Typo="Typo.body2" Class="font-mono" Color="Color.Secondary">@(context.DeviceId ?? "—")</MudText>
+        </MudTd>
+        <MudTd DataLabel="Details">
+            <MudText Typo="Typo.body2" Style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                @(context.Details ?? "—")
+            </MudText>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <div class="pa-8 text-center">
+            <MudIcon Icon="@Icons.Material.Filled.History" Size="Size.Large" Color="Color.Secondary" />
+            <MudText Typo="Typo.body1" Class="mt-2" Color="Color.Secondary">No audit logs found</MudText>
+        </div>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private List<AuditLogDto> logs = new();
+    private string searchQuery = "";
+    private string? filterEventType;
+    private bool isLoading = false;
+    private HttpClient Http => HttpClientFactory.CreateClient("Project400API");
+
+    private List<string> eventTypes = new();
+
+    private IEnumerable<AuditLogDto> filteredLogs
+    {
+        get
+        {
+            var result = logs.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(filterEventType))
+                result = result.Where(l => l.EventType == filterEventType);
+
+            if (!string.IsNullOrWhiteSpace(searchQuery))
+                result = result.Where(l =>
+                    (l.EventType?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (l.Result?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (l.Details?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (l.DeviceId?.Contains(searchQuery, StringComparison.OrdinalIgnoreCase) ?? false));
+
+            return result;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadLogs();
+    }
+
+    private async Task LoadLogs()
+    {
+        isLoading = true;
+        try
+        {
+            var response = await Http.GetFromJsonAsync<List<AuditLogDto>>("/api/admin/audit-logs?count=200");
+            logs = response ?? new();
+            eventTypes = logs.Select(l => l.EventType).Distinct().OrderBy(e => e).ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading audit logs: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private Color GetEventColor(string eventType) => eventType switch
+    {
+        "DoorUnlock" => Color.Success,
+        "PasskeyRegistration" => Color.Info,
+        "PasskeyLogin" => Color.Primary,
+        "TailgateDetected" => Color.Warning,
+        _ => Color.Default
+    };
+}

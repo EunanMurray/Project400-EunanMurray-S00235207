@@ -1,0 +1,185 @@
+@page "/"
+@rendermode InteractiveServer
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Navigation
+
+<PageTitle>Dashboard - Smart Access</PageTitle>
+
+<div class="page-header">
+    <div>
+        <MudText Typo="Typo.h4">Dashboard</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">Overview of your access control system</MudText>
+    </div>
+    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default"
+             Icon="@Icons.Material.Filled.CalendarToday">
+        @DateTime.Now.ToString("ddd, dd MMM yyyy — HH:mm")
+    </MudChip>
+</div>
+
+@* Stat Cards *@
+<MudGrid Spacing="4" Class="mb-6">
+    <MudItem xs="12" sm="4">
+        <MudPaper Class="pa-6 stat-card" Elevation="0">
+            <div class="d-flex align-center mb-3">
+                <MudAvatar Color="Color.Primary" Variant="Variant.Filled" Size="Size.Medium">
+                    <MudIcon Icon="@Icons.Material.Filled.MeetingRoom" />
+                </MudAvatar>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="ml-3">Doors</MudText>
+            </div>
+            @if (isLoading)
+            {
+                <MudSkeleton Width="60px" Height="42px" />
+            }
+            else
+            {
+                <MudText Typo="Typo.h3" Class="mb-1">@doorCount</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">total registered</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudPaper Class="pa-6 stat-card" Elevation="0">
+            <div class="d-flex align-center mb-3">
+                <MudAvatar Color="Color.Success" Variant="Variant.Filled" Size="Size.Medium">
+                    <MudIcon Icon="@Icons.Material.Filled.People" />
+                </MudAvatar>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="ml-3">Users</MudText>
+            </div>
+            @if (isLoading)
+            {
+                <MudSkeleton Width="60px" Height="42px" />
+            }
+            else
+            {
+                <MudText Typo="Typo.h3" Class="mb-1">@userCount</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">active employees</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudPaper Class="pa-6 stat-card" Elevation="0">
+            <div class="d-flex align-center mb-3">
+                <MudAvatar Color="Color.Warning" Variant="Variant.Filled" Size="Size.Medium">
+                    <MudIcon Icon="@Icons.Material.Filled.CreditCard" />
+                </MudAvatar>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="ml-3">Keycards</MudText>
+            </div>
+            @if (isLoading)
+            {
+                <MudSkeleton Width="60px" Height="42px" />
+            }
+            else
+            {
+                <MudText Typo="Typo.h3" Class="mb-1">@keycardCount</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">in circulation</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@* Quick Actions *@
+<MudText Typo="Typo.h6" Class="section-heading mb-4">Get Started</MudText>
+<MudGrid Spacing="4" Class="mb-6">
+    <MudItem xs="12" sm="6">
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Primary"
+                   FullWidth="true"
+                   Size="Size.Large"
+                   StartIcon="@Icons.Material.Filled.PersonAdd"
+                   OnClick="@(() => Navigation.NavigateTo("/employee-setup"))"
+                   Class="justify-start pa-4"
+                   Style="text-transform: none;">
+            <div class="text-left">
+                <MudText Typo="Typo.subtitle2">Onboard New Employee</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Register passkey, assign keycard &amp; enable access</MudText>
+            </div>
+        </MudButton>
+    </MudItem>
+</MudGrid>
+
+@* System Info *@
+<MudText Typo="Typo.h6" Class="section-heading mb-4">System Overview</MudText>
+<MudPaper Elevation="0" Class="pa-6" Style="border: 1px solid rgba(0,0,0,0.08);">
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudList T="string" Dense="true">
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Security" IconColor="Color.Primary">
+                    WebAuthn / Passkey authentication
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Nfc" IconColor="Color.Primary">
+                    RFID keycard door access
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.AdminPanelSettings" IconColor="Color.Primary">
+                    Admin QR passkey login
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.CameraAlt" IconColor="Color.Primary">
+                    Tailgating detection phase
+                </MudListItem>
+            </MudList>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudList T="string" Dense="true">
+                <MudListItem T="string" Icon="@Icons.Material.Filled.Memory" IconColor="Color.Secondary">
+                    ESP32 IoT integration
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.PhoneAndroid" IconColor="Color.Secondary">
+                    Mobile-first registration flow
+                </MudListItem>
+                <MudListItem T="string" Icon="@Icons.Material.Filled.QrCode2" IconColor="Color.Secondary">
+                    QR code employee onboarding
+                </MudListItem>
+            </MudList>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <MudAlert Severity="Severity.Warning" Class="mt-4">@errorMessage</MudAlert>
+}
+
+@code {
+    private int doorCount = 0;
+    private int userCount = 0;
+    private int keycardCount = 0;
+    private bool isLoading = true;
+    private string errorMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboardData();
+    }
+
+    private async Task LoadDashboardData()
+    {
+        isLoading = true;
+        try
+        {
+            var http = HttpClientFactory.CreateClient("Project400API");
+            var stats = await http.GetFromJsonAsync<StatsResponse>("/api/admin/stats");
+
+            if (stats != null)
+            {
+                doorCount = stats.DoorCount;
+                userCount = stats.UserCount;
+                keycardCount = stats.KeycardCount;
+            }
+        }
+        catch
+        {
+            errorMessage = "Unable to reach the API — it may still be starting up.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private class StatsResponse
+    {
+        public int DoorCount { get; set; }
+        public int UserCount { get; set; }
+        public int KeycardCount { get; set; }
+    }
+}

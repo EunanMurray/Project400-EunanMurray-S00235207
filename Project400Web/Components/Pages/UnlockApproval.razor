@@ -1,0 +1,164 @@
+@page "/unlock-approval"
+@page "/unlock-approval/{RequestId}"
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Navigation
+@inject IConfiguration Configuration
+@inject ILogger<UnlockApproval> Logger
+
+<PageTitle>Unlock Approval</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-4">
+    @if (loadError != null)
+    {
+        <MudCard>
+            <MudCardContent>
+                <div class="d-flex flex-column align-center pa-4">
+                    <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Size="Size.Large" Color="Color.Error" Class="mb-4" />
+                    <MudText Typo="Typo.h6" Align="Align.Center">Error loading unlock request</MudText>
+                    <MudText Typo="Typo.body2" Align="Align.Center" Color="Color.Secondary" Class="mt-2">
+                        @loadError
+                    </MudText>
+                </div>
+            </MudCardContent>
+        </MudCard>
+    }
+    else if (unlockRequest != null)
+    {
+        <div id="unlock-approval-root"
+             data-unlock-request-id="@unlockRequest.Id"
+             data-unlock-username="@unlockRequest.Username"
+             data-unlock-expires-ms="@expiresAtMs"
+             data-unlock-door="@unlockRequest.DoorName"
+             data-unlock-api-base-url="@apiBaseUrl">
+            <MudCard>
+                <MudCardContent>
+                    <div class="d-flex flex-column align-center">
+                        <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Large" Color="Color.Primary" Class="mb-4" Style="font-size: 80px;" />
+
+                        <MudText Typo="Typo.h4" Align="Align.Center" GutterBottom="true">
+                            Unlock Request
+                        </MudText>
+
+                        <MudText Typo="Typo.h6" Align="Align.Center" Color="Color.Secondary" GutterBottom="true">
+                            @unlockRequest.DoorName
+                        </MudText>
+
+                        <MudDivider Class="my-4" />
+
+                        <MudText Typo="Typo.body1" Align="Align.Center" Class="mb-2">
+                            Do you want to unlock this door?
+                        </MudText>
+
+                        <MudChip T="string" Size="Size.Small"
+                                 id="unlock-countdown-chip"
+                                 Color="@(initialIsExpired ? Color.Error : Color.Warning)"
+                                 Class="mb-4">
+                            <span id="unlock-countdown-text">
+                                @(initialIsExpired ? "Request Expired" : $"Expires in {initialSecondsRemaining} seconds")
+                            </span>
+                        </MudChip>
+                    </div>
+                </MudCardContent>
+                <MudCardActions Class="d-flex flex-wrap justify-center pb-4 px-4" Style="gap: 12px;">
+                    <button id="unlock-approve-button"
+                            type="button"
+                            class="mud-button-root mud-button mud-button-filled mud-button-filled-success mud-button-filled-size-large mud-ripple"
+                            disabled="@initialIsExpired"
+                            style="min-width: 150px; flex: 1 1 150px; max-width: 220px; min-height: 48px; touch-action: manipulation;">
+                        <span class="mud-button-label">
+                            <span id="unlock-approve-label">Approve</span>
+                            <span id="unlock-approve-spinner" style="display:none;">
+                                <span class="mud-progress-circular mud-default-text mud-progress-indeterminate" style="height:24px;width:24px;"></span>
+                            </span>
+                        </span>
+                    </button>
+                    <button id="unlock-deny-button"
+                            type="button"
+                            class="mud-button-root mud-button mud-button-outlined mud-button-outlined-error mud-button-outlined-size-large mud-ripple"
+                            style="min-width: 150px; flex: 1 1 150px; max-width: 220px; min-height: 48px; touch-action: manipulation;">
+                        <span class="mud-button-label">Deny</span>
+                    </button>
+                </MudCardActions>
+            </MudCard>
+        </div>
+    }
+    else
+    {
+        <MudCard>
+            <MudCardContent>
+                <div class="d-flex flex-column align-center" Style="min-height: 200px;">
+                    <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Large" Color="Color.Info" Class="mb-4" />
+                    <MudText Typo="Typo.h6" Align="Align.Center">
+                        No Active Unlock Requests
+                    </MudText>
+                    <MudText Typo="Typo.body2" Align="Align.Center" Color="Color.Secondary" Class="mt-2">
+                        Scan your keycard at a door to receive an unlock request
+                    </MudText>
+                </div>
+            </MudCardContent>
+        </MudCard>
+    }
+</MudContainer>
+
+@code {
+    [Parameter]
+    public string? RequestId { get; set; }
+
+    private UnlockRequestDto? unlockRequest;
+    private string? loadError;
+    private long expiresAtMs;
+    private int initialSecondsRemaining;
+    private bool initialIsExpired;
+    private string apiBaseUrl = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var currentUri = new Uri(Navigation.Uri);
+        if (!currentUri.Host.Contains("eunanmurray.ie", StringComparison.OrdinalIgnoreCase))
+        {
+            var redirectUrl = $"https://www.eunanmurray.ie{currentUri.PathAndQuery}";
+            Logger.LogInformation("Redirecting from {Current} to {Target} for WebAuthn domain compatibility", Navigation.Uri, redirectUrl);
+            Navigation.NavigateTo(redirectUrl, forceLoad: true);
+            return;
+        }
+
+        apiBaseUrl = Configuration["ApiPublicUrl"]?.TrimEnd('/') ?? "";
+
+        if (string.IsNullOrEmpty(RequestId))
+        {
+            return;
+        }
+
+        try
+        {
+            var http = HttpClientFactory.CreateClient("Project400API");
+            var response = await http.GetFromJsonAsync<UnlockRequestDto>($"/api/unlock/request/{RequestId}");
+            unlockRequest = response;
+
+            if (unlockRequest != null)
+            {
+                var expiresUtc = DateTime.SpecifyKind(unlockRequest.ExpiresAt, DateTimeKind.Utc);
+                expiresAtMs = new DateTimeOffset(expiresUtc).ToUnixTimeMilliseconds();
+                var remaining = (int)(expiresUtc - DateTime.UtcNow).TotalSeconds;
+                initialSecondsRemaining = Math.Max(0, remaining);
+                initialIsExpired = remaining <= 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load unlock request {RequestId}", RequestId);
+            loadError = ex.Message;
+        }
+    }
+
+    public class UnlockRequestDto
+    {
+        public Guid Id { get; set; }
+        public Guid UserId { get; set; }
+        public string Username { get; set; } = "";
+        public string DoorName { get; set; } = "";
+        public string Status { get; set; } = "";
+        public DateTime ExpiresAt { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+}
